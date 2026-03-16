@@ -11,20 +11,18 @@ import java.util.stream.Collectors;
 
 public class TransacaoService {
 
-    // Simula um banco de dados em memória
     private final Map<String, List<Transacao>> porCliente = new HashMap<>();
     private final Map<String, BigDecimal> saldos          = new HashMap<>();
 
-    // Registra saldo inicial de um cliente
     public void abrirConta(String clienteId, BigDecimal saldoInicial) {
         saldos.put(clienteId, saldoInicial);
         porCliente.put(clienteId, new ArrayList<>());
     }
 
-    // Processa uma transação
     public void processar(Transacao t) {
         validarCliente(t.clienteId());
         verificarTransacoesSuspeitas(t);
+        verificarLimiteDiarioTransferencia(t);
 
         BigDecimal saldoAtual = saldos.get(t.clienteId());
 
@@ -39,19 +37,16 @@ public class TransacaoService {
         porCliente.get(t.clienteId()).add(t);
     }
 
-    // Retorna saldo atual
     public BigDecimal consultarSaldo(String clienteId) {
         validarCliente(clienteId);
         return saldos.get(clienteId);
     }
 
-    // Lista todas as transações de um cliente
     public List<Transacao> listarTransacoes(String clienteId) {
         validarCliente(clienteId);
         return Collections.unmodifiableList(porCliente.get(clienteId));
     }
 
-    // Total gasto por tipo (usa Streams)
     public Map<TipoTransacao, BigDecimal> totalPorTipo(String clienteId) {
         validarCliente(clienteId);
         return porCliente.get(clienteId).stream()
@@ -61,7 +56,6 @@ public class TransacaoService {
                 ));
     }
 
-    // Busca transações acima de um valor (usa Streams)
     public List<Transacao> transacoesAcimaDe(String clienteId, BigDecimal limite) {
         validarCliente(clienteId);
         return porCliente.get(clienteId).stream()
@@ -70,14 +64,12 @@ public class TransacaoService {
                 .toList();
     }
 
-    // Regra antifraude: mais de 3 débitos acima de R$500 no mesmo dia
     private void verificarTransacoesSuspeitas(Transacao nova) {
         if (nova.tipo() != TipoTransacao.DEBITO) return;
         if (nova.valor().compareTo(new BigDecimal("500")) <= 0) return;
 
-        List<Transacao> historico = porCliente.getOrDefault(nova.clienteId(), List.of());
-
-        long altasHoje = historico.stream()
+        long altasHoje = porCliente.getOrDefault(nova.clienteId(), List.of())
+                .stream()
                 .filter(t -> t.tipo() == TipoTransacao.DEBITO)
                 .filter(t -> t.valor().compareTo(new BigDecimal("500")) > 0)
                 .filter(t -> t.criadoEm().toLocalDate().equals(LocalDate.now()))
@@ -85,6 +77,28 @@ public class TransacaoService {
 
         if (altasHoje >= 3)
             throw new RuntimeException("Operação bloqueada: comportamento suspeito detectado");
+    }
+
+    private void verificarLimiteDiarioTransferencia(Transacao nova) {
+        if (nova.tipo() != TipoTransacao.TRANSFERENCIA) return;
+
+        BigDecimal limite = new BigDecimal("5000.00");
+
+        BigDecimal totalHoje = porCliente
+                .getOrDefault(nova.clienteId(), List.of())
+                .stream()
+                .filter(t -> t.tipo() == TipoTransacao.TRANSFERENCIA)
+                .filter(t -> t.criadoEm().toLocalDate().equals(LocalDate.now()))
+                .map(Transacao::valor)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (totalHoje.add(nova.valor()).compareTo(limite) > 0)
+            throw new RuntimeException(
+                    "Limite diário de transferências atingido. " +
+                            "Limite: R$ " + limite +
+                            ", Utilizado: R$ " + totalHoje +
+                            ", Solicitado: R$ " + nova.valor()
+            );
     }
 
     private void validarCliente(String clienteId) {
