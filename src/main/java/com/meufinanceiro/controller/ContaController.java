@@ -1,12 +1,11 @@
 package com.meufinanceiro.controller;
 
-import com.meufinanceiro.model.Transacao;
-import com.meufinanceiro.model.TipoTransacao;
-import com.meufinanceiro.service.TransacaoService;
+import com.meufinanceiro.model.Conta;
+import com.meufinanceiro.model.TransacaoEntity;
+import com.meufinanceiro.service.ContaService;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -14,57 +13,43 @@ import java.util.Map;
 @RequestMapping("/contas")
 public class ContaController {
 
-    private final TransacaoService service = new TransacaoService();
+    private final ContaService contaService;
 
-    // POST /contas/{id}/abrir?saldo=1000
-    @PostMapping("/{id}/abrir")
-    public Map<String, Object> abrirConta(
-            @PathVariable String id,
-            @RequestParam BigDecimal saldo) {
-
-        service.abrirConta(id, saldo);
-        return Map.of(
-                "mensagem", "Conta aberta com sucesso",
-                "clienteId", id,
-                "saldoInicial", saldo
-        );
+    public ContaController(ContaService contaService) {
+        this.contaService = contaService;
     }
 
-    // GET /contas/{id}/saldo
+    @PostMapping("/{id}/abrir")
+    public Conta abrirConta(
+            @PathVariable String id,
+            @RequestParam String titular,
+            @RequestParam BigDecimal saldo) {
+        return contaService.abrirConta(id, titular, saldo);
+    }
+
     @GetMapping("/{id}/saldo")
     public Map<String, Object> consultarSaldo(@PathVariable String id) {
+        var conta = contaService.consultarConta(id);
         return Map.of(
-                "clienteId", id,
-                "saldo", service.consultarSaldo(id)
+                "clienteId", conta.getId(),
+                "titular", conta.getTitular(),
+                "saldo", conta.getSaldo()
         );
     }
 
-    // POST /contas/{id}/transacoes
     @PostMapping("/{id}/transacoes")
-    public Map<String, Object> processarTransacao(
+    public TransacaoEntity processarTransacao(
             @PathVariable String id,
             @RequestBody Map<String, String> body) {
-
-        var transacao = new Transacao(
-                java.util.UUID.randomUUID().toString(),
+        return contaService.processar(
                 id,
                 new BigDecimal(body.get("valor")),
-                TipoTransacao.valueOf(body.get("tipo")),
-                LocalDateTime.now()
-        );
-
-        service.processar(transacao);
-        return Map.of(
-                "mensagem", "Transação processada",
-                "id", transacao.id(),
-                "valor", transacao.valor(),
-                "tipo", transacao.tipo()
+                body.get("tipo")
         );
     }
 
-    // GET /contas/{id}/transacoes
     @GetMapping("/{id}/transacoes")
-    public List<Transacao> listarTransacoes(@PathVariable String id) {
-        return service.listarTransacoes(id);
+    public List<TransacaoEntity> listarTransacoes(@PathVariable String id) {
+        return contaService.listarTransacoes(id);
     }
 }
